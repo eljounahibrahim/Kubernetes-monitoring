@@ -1,0 +1,185 @@
+# Configuration générales
+global:
+  scrape_interval:     15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+       - localhost:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  # - "/etc/prometheus/alert.rules"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+
+############################### Prometheus server : Ici on supervise le serveur prometheus lui meme    
+     
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+    - targets: ['localhost:9090']
+
+############################### Kubernetes monitoring section
+
+################# Kube api servers
+      
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+    - role: endpoints
+      api_server: <https://IPadress>
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token: <token>
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token: <token>
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+      action: keep
+      regex: default;kubernetes;https
+
+############### endpoints 
+
+  - job_name: 'kubernetes-service-endpoints'
+    kubernetes_sd_configs:
+    - role: endpoints
+      api_server: <https://IPadress>
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token: <token>
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token: <token>
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: (\d+)
+      target_label: __meta_kubernetes_pod_container_port_number
+    - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+      action: replace
+      regex: ()
+      target_label: __meta_kubernetes_service_annotation_prometheus_io_path
+      replacement: /metrics
+    - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_pod_container_port_number, __meta_kubernetes_service_annotation_prometheus_io_path]
+      target_label: __metrics_path__
+      regex: (.+);(.+);(.+);(.+)
+      replacement: /api/v1/namespaces/$1/services/$2:$3/proxy$4
+    - target_label: __address__
+      replacement: <https://IPadress>:443
+    - action: labelmap
+      regex: __meta_kubernetes_service_label_(.+)
+    - source_labels: [__meta_kubernetes_namespace]
+      action: replace
+      target_label: kubernetes_namespace
+    - source_labels: [__meta_kubernetes_service_name]
+      action: replace
+      target_label: kubernetes_name
+    - source_labels: [__meta_kubernetes_pod_node_name]
+      action: replace
+      target_label: instance
+ 
+#################################### Kubelet
+
+  - job_name: 'kubelet'
+    kubernetes_sd_configs:
+    - role: node
+      api_server: <https://IPadress>
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token: <token>
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token: <token>
+    relabel_configs:
+    - action: labelmap
+      regex: __meta_kubernetes_node_label_(.+)
+    - target_label: __address__
+      replacement: <https://IPadress>:443
+    - source_labels: [__meta_kubernetes_node_name]
+      regex: (.+)
+      target_label: __metrics_path__
+      replacement: /api/v1/nodes/${1}/proxy/metrics
+
+
+################################# cAdvisor
+
+
+  - job_name: 'pods cAdvisor'
+    kubernetes_sd_configs:
+    - role: node
+      api_server: <https://IPadress>
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token: <token>
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token: <token>
+    relabel_configs:
+    - action: labelmap
+      regex: __meta_kubernetes_node_label_(.+)
+    - target_label: __address__
+      replacement: <https://IPadress>:443
+    - source_labels: [__meta_kubernetes_node_name]
+      regex: (.+)
+      target_label: __metrics_path__
+      replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+     
+############################## 
+
+
+  - job_name: 'PODs'
+    kubernetes_sd_configs:
+    - role: pod
+      api_server: <https://IPadress>
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token: <token>
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token: <token>
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      regex: ()
+      target_label: __meta_kubernetes_pod_annotation_prometheus_io_path
+      replacement: /metrics
+    - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_name, __meta_kubernetes_pod_container_port_number, __meta_kubernetes_pod_annotation_prometheus_io_path]
+      target_label: __metrics_path__
+      regex: (.+);(.+);(.+);(.+)
+      replacement: /api/v1/namespaces/$1/pods/$2:$3/proxy$4
+    - target_label: __address__
+      replacement: <https://IPadress>:443
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - source_labels: [__meta_kubernetes_namespace]
+      action: replace
+      target_label: kubernetes_namespace
+    - source_labels: [__meta_kubernetes_pod_name]
+      action: replace
+      target_label: kubernetes_pod_name
+    - source_labels: [__meta_kubernetes_pod_node_name]
+      action: replace
+      target_label: instance
+      
+
